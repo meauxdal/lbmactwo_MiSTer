@@ -213,27 +213,37 @@ video_freak video_freak
 `include "build_id.v"
 localparam CONF_STR = {
 	"LBMacTwo;;",
+	// Layout follows MacLC_MiSTer (computer-core OSD standard). Status bits
+	// are unchanged from the flat layout, so saved .CFG files apply, except
+	// NuBus video: it was "O13" (bits 1-3) while the RTL reads bit 13, so it
+	// never worked; it is now OD (bit 13).
+	"SC0,IMGVHDHDA,Pri. disk (ID 0);",
+	"SC1,IMGVHDHDA,Disk (ID 1);",
+	"F1,DSK,Floppy 1;",
+	"F2,DSK,Floppy 2;",
 	"-;",
-	"F1,DSK,Mount Pri Floppy;",
-	"F2,DSK,Mount Sec Floppy;",
+	"O45,Memory,2 MB,4 MB,8 MB;",
 	"-;",
-	"SC0,IMGVHDHDA,Mount SCSI-0;",
-	"SC1,IMGVHDHDA,Mount SCSI-1;",
-	"SC2,NVR,Mount PRAM (reboots);",
+	"P1,Machine;",
+	"P2,Video;",
+	"P3,Advanced;",
 	"-;",
-	"O78,Aspect ratio,Original,Full Screen,[ARC1],[ARC2];",
-	"OBC,Scale,Normal,V-Integer,Narrower HV-Integer,Wider HV-Integer;",
-	"-;",
-	"O45,Memory,2MB,4MB,8MB;",
-	"-;",
-	"O6,Debug Overlay,Off,On;",
-	"O13,NuBus Video,Color,B&W;",
-	"OG,Monitor,640x480 13in,512x384 12in;",
-	"-;",
-	"RE,Interrupt (NMI / MacsBug);",
-	"RF,Reset PRAM & Core;",
-	"R0,Reset & Apply CPU+Memory;",
-	"-;",
+	"h0-,Changes pending;",
+	"R0,Apply and reset;",
+
+	"P1RE,Interrupt (NMI);",
+	"P1-;",
+	"P1RF,Clear PRAM and reset;",
+
+	// Aspect ratio and scale only steer the scaler, so they act at once.
+	"P2OG,Monitor,640x480 13in,512x384 12in;",
+	"P2OD,NuBus video,Color,B&W;",
+	"P2O78,Aspect ratio,Original,Full Screen,[ARC1],[ARC2];",
+	"P2OBC,Scale,Normal,V-Integer,Narrower HV-Integer,Wider HV-Integer;",
+
+	"P3SC2,NVR,PRAM image (reboots);",
+	"P3-;",
+	"P3O6,Debug overlay,Off,On;",
 	"v,0;", // [optional] config version 0-99.
 	        // If CONF_STR options are changed in incompatible way, then change version number too,
 			// so all options will get default values on first start.
@@ -242,11 +252,6 @@ localparam CONF_STR = {
 
 wire status_turbo = 1'b1; // Mac II always runs at C15M = 15.6672 MHz (CPU rides clk16_en)
 wire status_overlay_en = status[6];
-wire status_video_mono = status[13];
-// OSD "Monitor" select (status bit 16 = OSD char 'G'): which monitor the
-// MDC824 card advertises on its sense lines. Takes effect on the next Mac
-// reboot (the Slot Manager / card declaration ROM probes sense at boot).
-wire status_monitor_512 = status[16];
 
 ////////////////////   CLOCKS   ///////////////////
 
@@ -289,7 +294,6 @@ always @(posedge clk_sys or negedge pll_locked) begin
 	end
 end
 
-reg [1:0] status_mem;
 reg [1:0] status_mod;
 reg       n_reset = 0;
 reg       osd_reset_req = 0;
@@ -327,7 +331,6 @@ always @(posedge clk_sys) begin
 		end
 		else if(rst_cnt) begin
 			rst_cnt    <= rst_cnt - 1'd1;
-			status_mem <= status[5:4];
 			status_mod <= status[10:9];
 		end
 		else begin
@@ -335,6 +338,22 @@ always @(posedge clk_sys) begin
 		end
 	end
 end
+
+// Machine settings apply only while reset is asserted (OSD standard).
+// Saved configs still apply on first load: the HPS delivers status while
+// n_reset is held. Aspect ratio, scale and the debug overlay stay live.
+reg [31:0] cfg = 0;
+always @(posedge clk_sys) if (~n_reset) cfg <= status;
+// Settings that wait for reset: memory (5:4), NuBus video (13), monitor (16).
+localparam [31:0] CFG_MASK = 32'h00012030;
+wire osd_pending = |((status ^ cfg) & CFG_MASK);
+
+wire [1:0] status_mem = cfg[5:4];
+wire status_video_mono = cfg[13];
+// OSD "Monitor" select (bit 16 = OSD char 'G'): which monitor the MDC824 card
+// advertises on its sense lines. The Slot Manager / card declaration ROM
+// probes sense at boot.
+wire status_monitor_512 = cfg[16];
 
 ///////////////////////////////////////////////////
 
@@ -604,6 +623,7 @@ hps_io #(.CONF_STR(CONF_STR), .VDNUM(VDNUM), .WIDE(1)) hps_io
 
 	.buttons(buttons),
 	.status(status),
+	.status_menumask({15'd0, osd_pending}),
 
 	.sd_lba(sd_lba),
 	.sd_rd(sd_rd),
