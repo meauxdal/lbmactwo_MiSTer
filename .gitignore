@@ -14,8 +14,11 @@ PLLJ_PLLSPE_INFO.txt
 *.orig
 *.rej
 
-# Claude Code personal/local settings (contains local IPs, SSH commands)
-.claude/settings.local.json
+# AI agent instructions and settings (kept locally, not in the repo)
+CLAUDE.md
+AGENTS.md
+.claude/
+.codex/
 
 # Local build-artifact backups made during hardware debugging
 output_files_baseline_*/
@@ -81,8 +84,7 @@ scripts/local.env
 
 # Scratch directory — in-progress / experimental / one-shot work that
 # does not belong in the repo. Hardware debug captures, ad-hoc
-# screenshots, session-specific notes, etc. See CLAUDE.md "Scratch
-# directory" for the convention.
+# screenshots, session-specific notes, etc.
 scratch/
 
 # Python bytecode caches (e.g. scripts/__pycache__)
